@@ -97,6 +97,51 @@ def create_mask(length, mask_pth, mask_type='square'):
     return output_pth + '.npy'
 
 
+def create_mask_base_on_time(length, mask_pth, mask_type='square'):
+    # For sorted.
+    if length < 10:
+        output_pth = op.join(mask_pth, f'mask_{mask_type}_00{length}')
+    elif length < 100:
+        output_pth = op.join(mask_pth, f'mask_{mask_type}_0{length}')
+    else:
+        output_pth = op.join(mask_pth, f'mask_{mask_type}_{length}')
+
+    if op.isfile(output_pth):
+        return output_pth
+
+    h, w = spec.shape
+    mid_point = h // 2, w // 2
+    # print(mid_point, length)
+
+    mask = np.zeros((h, w, 3), np.uint8)
+    if mask_type == 'square':
+        area = h * length
+        side = math.floor(math.sqrt(area))
+        t = mid_point[0] - (side // 2) + 1
+        b = mid_point[0] + (side // 2)
+        l = mid_point[1] - (side // 2) + 1
+        r = mid_point[1] + (side // 2)
+        # print(t, b, l, r)
+        mask = cv2.rectangle(mask, (l, t), (r, b), (255, 255, 255), -1)
+    elif mask_type == 'time':
+        width = length
+        t = 0 + 1
+        b = h
+        l = mid_point[1] - (width // 2) + 1
+        r = mid_point[1] + (width // 2)
+        # print(t, b, l, r)
+        mask = cv2.rectangle(mask, (l, t), (r, b), (255, 255, 255), -1)
+
+    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
+    # This way is for showing the visualized results then convert to 1-channel.
+    mask = mask[:, :, np.newaxis]
+    # print(square_mask.shape)
+
+    np.save(output_pth, mask)
+    return output_pth + '.npy'
+
+
 if __name__ == "__main__":
     args = docopt(__doc__)
     print(args)
@@ -111,15 +156,19 @@ if __name__ == "__main__":
     if proj_pth is None:
          proj_pth = '/work/r08922a13/generative_inpainting'
     if output_pth is None:
-        output_pth = op.join(proj_pth, 'examples/esc50/mag_origin_npy/loss_test_output')
+        # output_pth = op.join(proj_pth, 'examples/esc50/mag_origin_npy/loss_test_output')
+        raise ValueError("Please set the path for model's output.")
     if checkpoint is None:
-        checkpoint = op.join(proj_pth, 'logs/full_model_esc50_origin_npy_time_mask_training')
+        # checkpoint = op.join(proj_pth, 'logs/full_model_esc50_origin_npy_time_mask_training')
+        raise ValueError("No checkpoint be selected.")
     if data_pth is None:
-        data_pth = op.join(proj_pth, 'examples/esc50/mag_origin_npy')
+        # data_pth = op.join(proj_pth, 'examples/esc50/mag_origin_npy')
+        raise ValueError("Test data not set!")
     if loss_type is None:
         loss_type = 'l1'
     if mask_pth is None:
-        mask_pth = op.join(proj_pth, 'examples/esc50/mask_shape_1')
+        # mask_pth = op.join(proj_pth, 'examples/esc50/mask_shape_1')
+        raise ValueError("No mask output path be selected.")
     if mask_type is None:
         mask_type = 'square'
     os.chdir(proj_pth)
@@ -135,12 +184,12 @@ if __name__ == "__main__":
 
         square_l1_loss = []
         # Set 10 as progress unix for mask length. From 10 -> 400.
-        for i in tqdm(range(40)):
+        for i in tqdm(range(64)):
             image = filename
 
             # mask_type = 'square'
-            mask_length = (i + 1) * 10
-            mask = create_mask(mask_length, mask_pth, mask_type)
+            mask_length = (i + 1) * 4
+            mask = create_mask_base_on_time(mask_length, mask_pth, mask_type)
 
             # print(op.basename(filename))
             if i < 10:
