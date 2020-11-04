@@ -2,3 +2,6 @@ model_logs
 logs
 data
 examples
+__pycache__
+libs
+*/.ipynb_checkpoints
