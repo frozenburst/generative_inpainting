@@ -112,8 +112,11 @@ def random_bbox(FLAGS):
     img_shape = FLAGS.img_shapes
     img_height = img_shape[0]
     img_width = img_shape[1]
-    maxt = img_height - FLAGS.vertical_margin - FLAGS.height
-    maxl = img_width - FLAGS.horizontal_margin - FLAGS.width
+    # The author version seems to be wrong.
+    # maxt = img_height - FLAGS.vertical_margin - FLAGS.height
+    # maxl = img_width - FLAGS.horizontal_margin - FLAGS.width
+    maxt = img_height - FLAGS.height
+    maxl = img_width - FLAGS.width
     t = tf.random_uniform(
         [], minval=FLAGS.vertical_margin, maxval=maxt, dtype=tf.int32)
     l = tf.random_uniform(
@@ -137,20 +140,56 @@ def bbox2mask(FLAGS, bbox, name='mask'):
         mask = np.zeros((1, height, width, 1), np.float32)
         h = np.random.randint(delta_h//2+1)
         w = np.random.randint(delta_w//2+1)
-        mask[:, bbox[0]+h:bbox[0]+bbox[2]-h,
-             bbox[1]+w:bbox[1]+bbox[3]-w, :] = 1.
-        return mask
+        top = bbox[0] + h
+        bottom = bbox[0] + bbox[2] - h
+        left = bbox[1] + w
+        right = bbox[1] + bbox[3] - w
+        mask[:, top:bottom,
+             left:right, :] = 1.
+        return mask, (top, bottom, left, right)
     with tf.variable_scope(name), tf.device('/cpu:0'):
         img_shape = FLAGS.img_shapes
         height = img_shape[0]
         width = img_shape[1]
-        mask = tf.py_func(
+        mask, box = tf.py_func(
             npmask,
             [bbox, height, width,
              FLAGS.max_delta_height, FLAGS.max_delta_width],
-            tf.float32, stateful=False)
+            (tf.float32, tf.int64), stateful=False)
         mask.set_shape([1] + [height, width] + [1])
-    return mask
+    return mask, box
+
+
+def mask_part_initialize(batch_pos, mask, box):
+    # box: (t, b, l, r)
+    width = box[3] - box[2] + 1
+    batch_incomplete = batch_pos*(1.-mask)
+    if batch_incomplete[:, box[0]:box[1], box[2]:box[3], :].shape != batch_pos[:, box[0]:box[1], box[2]-width:box[3]-width, :].shape:
+        raise ValueError("Could not match maze operation with box:", box, batch_pos.shape, batch_incomplete.shape, mask.shape)
+    batch_incomplete[:, box[0]:box[1], box[2]:box[3], :] = batch_pos[:, box[0]:box[1], box[2]-width:box[3]-width, :]
+    return batch_incomplete
+
+
+def mask_part_initialize_tf(FLAGS, batch_pos, mask, box, name='mask_part_initialize'):
+    """Generate initialized mask from image.
+
+    Args:
+        bbox: tuple, (top, left, height, width)
+
+    Returns:
+        tf.Tensor: output with shape [1, H, W, 1]
+
+    """
+    with tf.variable_scope(name), tf.device('/cpu:0'):
+        img_shape = FLAGS.img_shapes
+        height = img_shape[0]
+        width = img_shape[1]
+        batch_incomplete = tf.py_func(
+            mask_part_initialize,
+            [batch_pos, mask, box],
+            (tf.float32), stateful=False)
+        batch_incomplete.set_shape(batch_pos.get_shape().as_list()[0:-1]+[1])
+    return batch_incomplete
 
 
 def brush_stroke_mask(FLAGS, name='mask'):
