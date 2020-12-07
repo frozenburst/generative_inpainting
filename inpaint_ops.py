@@ -112,8 +112,11 @@ def random_bbox(FLAGS):
     img_shape = FLAGS.img_shapes
     img_height = img_shape[0]
     img_width = img_shape[1]
-    maxt = img_height - FLAGS.vertical_margin - FLAGS.height
-    maxl = img_width - FLAGS.horizontal_margin - FLAGS.width
+    # The author version seems to be wrong.
+    # maxt = img_height - FLAGS.vertical_margin - FLAGS.height
+    # maxl = img_width - FLAGS.horizontal_margin - FLAGS.width
+    maxt = img_height - FLAGS.height
+    maxl = img_width - FLAGS.width
     t = tf.random_uniform(
         [], minval=FLAGS.vertical_margin, maxval=maxt, dtype=tf.int32)
     l = tf.random_uniform(
@@ -137,8 +140,8 @@ def bbox2mask(FLAGS, bbox, name='mask'):
         mask = np.zeros((1, height, width, 1), np.float32)
         h = np.random.randint(delta_h//2+1)
         w = np.random.randint(delta_w//2+1)
-        mask[:, bbox[0]+h:bbox[0]+bbox[2]-h,
-             bbox[1]+w:bbox[1]+bbox[3]-w, :] = 1.
+        mask[:, bbox[0]+h:bbox[0]+bbox[2]-h+1,
+            bbox[1]+w:bbox[1]+bbox[3]-w+1, :] = 1.
         return mask
     with tf.variable_scope(name), tf.device('/cpu:0'):
         img_shape = FLAGS.img_shapes
@@ -151,6 +154,53 @@ def bbox2mask(FLAGS, bbox, name='mask'):
             tf.float32, stateful=False)
         mask.set_shape([1] + [height, width] + [1])
     return mask
+
+
+def mask_part_initialize(batch_pos, mask):
+    # Get the width of mask row by sum axis=2 and find max
+    # shift all the nonzero in mask with width on left
+    # Set the value of mask part to be
+    mask_nonzero = np.nonzero(mask)
+    mask_row_width = np.sum(mask, axis=2)
+    mask_nonzero_shift = np.copy(mask_nonzero)
+    max_width = np.max(mask_row_width)
+    mask_nonzero_shift[2] = mask_nonzero[2] - max_width
+    mask_nonzero_shift = tuple(mask_nonzero_shift)
+    batch_incomplete = batch_pos * (1.-mask)
+    # Set for each batch
+    for i in range(batch_pos.shape[0]):
+        if i == 0:
+            batch_incomplete[mask_nonzero] = batch_pos[mask_nonzero_shift]
+            continue
+
+        mask_nonzero_tmp = np.copy(mask_nonzero)
+        mask_nonzero_tmp[0] = mask_nonzero_tmp[0] + i
+        mask_nonzero_tmp = tuple(mask_nonzero_tmp)
+        mask_nonzero_shift_tmp = np.copy(mask_nonzero_shift)
+        mask_nonzero_shift_tmp[0] = mask_nonzero_shift_tmp[0] + i
+        mask_nonzero_shift_tmp = tuple(mask_nonzero_shift_tmp)
+        batch_incomplete[mask_nonzero_tmp] = batch_pos[mask_nonzero_shift_tmp]
+
+    return batch_incomplete
+
+
+def mask_part_initialize_tf(batch_pos, mask, name='mask_part_initialize'):
+    """Generate initialized mask from image.
+
+    Args:
+        bbox: tuple, (top, left, height, width)
+
+    Returns:
+        tf.Tensor: output with shape [1, H, W, 1]
+
+    """
+    with tf.variable_scope(name), tf.device('/cpu:0'):
+        batch_incomplete = tf.py_func(
+            mask_part_initialize,
+            [batch_pos, mask],
+            (tf.float32), stateful=False)
+        batch_incomplete.set_shape(batch_pos.get_shape().as_list()[0:-1]+[1])
+    return batch_incomplete
 
 
 def brush_stroke_mask(FLAGS, name='mask'):
@@ -275,63 +325,90 @@ def contextual_attention(f, b, mask=None, ksize=3, stride=1, rate=1,
 
     """
     # get shapes
+    # [b, h, w, c], [16, 64, 64, 96], [batch size, 256/stride, , cnum*4]
     raw_fs = tf.shape(f)
     raw_int_fs = f.get_shape().as_list()
     raw_int_bs = b.get_shape().as_list()
     # extract patches from background with stride and rate
     kernel = 2*rate
+    # [16, 32, 32, 1536(96*16)] :extract 4*4 with stride=2 from h(64)*w(64) to be 32*32,
+    # all patchs are stacked in the last, actually is 32*32(total patches) *16(each patch4*4).
     raw_w = tf.extract_image_patches(
         b, [1,kernel,kernel,1], [1,rate*stride,rate*stride,1], [1,1,1,1], padding='SAME')
+    # [16, 1024, 4, 4, 96]: 1024(total patches) * 4*4(each patch)
     raw_w = tf.reshape(raw_w, [raw_int_bs[0], -1, kernel, kernel, raw_int_bs[3]])
+    # [16, 4, 4, 96, 1024]
     raw_w = tf.transpose(raw_w, [0, 2, 3, 4, 1])  # transpose to b*k*k*c*hw
     # downscaling foreground option: downscaling both foreground and
     # background for matching and use original background for reconstruction.
+    # f, b, mask's h&w resize to half(rate=2)
     f = resize(f, scale=1./rate, func=tf.image.resize_nearest_neighbor)
     b = resize(b, to_shape=[int(raw_int_bs[1]/rate), int(raw_int_bs[2]/rate)], func=tf.image.resize_nearest_neighbor)  # https://github.com/tensorflow/tensorflow/issues/11651
     if mask is not None:
         mask = resize(mask, scale=1./rate, func=tf.image.resize_nearest_neighbor)
+    # get shape after resize
     fs = tf.shape(f)
     int_fs = f.get_shape().as_list()
+    # split f with each batch -> 16 * [1, 32, 32, 96] to group
     f_groups = tf.split(f, int_fs[0], axis=0)
     # from t(H*W*C) to w(b*k*k*c*h*w)
     bs = tf.shape(b)
     int_bs = b.get_shape().as_list()
+    # w: [16, 32, 32, 864(96*9)]: extract each patch(3*3) with stride=1 from b after resize
     w = tf.extract_image_patches(
         b, [1,ksize,ksize,1], [1,stride,stride,1], [1,1,1,1], padding='SAME')
+    # [16, 1024(h*w), 3, 3, 96]
     w = tf.reshape(w, [int_fs[0], -1, ksize, ksize, int_fs[3]])
+    # [16, 3, 3, 96, 1024]
     w = tf.transpose(w, [0, 2, 3, 4, 1])  # transpose to b*k*k*c*hw
     # process mask
+    # [1, 32, 32, 1]
     if mask is None:
         mask = tf.zeros([1, bs[1], bs[2], 1])
+    # m: [1, 32, 32, 9]
     m = tf.extract_image_patches(
         mask, [1,ksize,ksize,1], [1,stride,stride,1], [1,1,1,1], padding='SAME')
+    # [1, 1024, 3, 3, 1]
     m = tf.reshape(m, [1, -1, ksize, ksize, 1])
+    # [1, 3, 3, 1, 1024]
     m = tf.transpose(m, [0, 2, 3, 4, 1])  # transpose to b*k*k*c*hw
     m = m[0]
+    # mm: [1, 1, 1, 1024]:
+    # reduce mean count the mean of seleted axis,
+    # equal return True or False by condition, cast convert True->1 False->0.
     mm = tf.cast(tf.equal(tf.reduce_mean(m, axis=[0,1,2], keep_dims=True), 0.), tf.float32)
+    # 16 * [1, 3, 3, 96, 1024]: after resize
     w_groups = tf.split(w, int_bs[0], axis=0)
+    # 16 * [1, 4, 4, 96, 1024]: original size
     raw_w_groups = tf.split(raw_w, int_bs[0], axis=0)
     y = []
     offsets = []
-    k = fuse_k
-    scale = softmax_scale
+    k = fuse_k  # 3
+    scale = softmax_scale   # 10.0
+    # [3, 3, 1, 1]; 1, 0, 0 / 0, 1, 0 / 0, 0, 1; fuse_weight[0, 0, 0, 0] = 1
     fuse_weight = tf.reshape(tf.eye(k), [k, k, 1, 1])
     for xi, wi, raw_wi in zip(f_groups, w_groups, raw_w_groups):
         # conv for compare
         wi = wi[0]
         wi_normed = wi / tf.maximum(tf.sqrt(tf.reduce_sum(tf.square(wi), axis=[0,1,2])), 1e-4)
+        # [1, 32, 32, 1024]
         yi = tf.nn.conv2d(xi, wi_normed, strides=[1,1,1,1], padding="SAME")
 
         # conv implementation for fuse scores to encourage large patches
         if fuse:
+            # [1, 1024, 1024, 1]
             yi = tf.reshape(yi, [1, fs[1]*fs[2], bs[1]*bs[2], 1])
             yi = tf.nn.conv2d(yi, fuse_weight, strides=[1,1,1,1], padding='SAME')
+            # [1, 32, 32, 32, 32]
             yi = tf.reshape(yi, [1, fs[1], fs[2], bs[1], bs[2]])
             yi = tf.transpose(yi, [0, 2, 1, 4, 3])
+            # [1, 1024, 1024, 1]
             yi = tf.reshape(yi, [1, fs[1]*fs[2], bs[1]*bs[2], 1])
             yi = tf.nn.conv2d(yi, fuse_weight, strides=[1,1,1,1], padding='SAME')
+            # [1, 32, 32, 32, 32]
             yi = tf.reshape(yi, [1, fs[2], fs[1], bs[2], bs[1]])
             yi = tf.transpose(yi, [0, 2, 1, 4, 3])
+        # [1, 32, 32, 1024]
         yi = tf.reshape(yi, [1, fs[1], fs[2], bs[1]*bs[2]])
 
         # softmax to match
@@ -339,27 +416,36 @@ def contextual_attention(f, b, mask=None, ksize=3, stride=1, rate=1,
         yi = tf.nn.softmax(yi*scale, 3)
         yi *=  mm  # mask
 
+        # offset: [1, 32, 32]
         offset = tf.argmax(yi, axis=3, output_type=tf.int32)
+        # [1, 32, 32, 2]
         offset = tf.stack([offset // fs[2], offset % fs[2]], axis=-1)
         # deconv for patch pasting
         # 3.1 paste center
+        # [4, 4, 96, 1024]
         wi_center = raw_wi[0]
+        # [1, 64, 64, 96]
         yi = tf.nn.conv2d_transpose(yi, wi_center, tf.concat([[1], raw_fs[1:]], axis=0), strides=[1,rate,rate,1]) / 4.
         y.append(yi)
         offsets.append(offset)
+    # 16 * [1, 64, 64, 96]
     y = tf.concat(y, axis=0)
     y.set_shape(raw_int_fs)
+    # [16, 32, 32, 2]
     offsets = tf.concat(offsets, axis=0)
     offsets.set_shape(int_bs[:3] + [2])
     # case1: visualize optical flow: minus current position
+    # [16, 32, 32, 1]
     h_add = tf.tile(tf.reshape(tf.range(bs[1]), [1, bs[1], 1, 1]), [bs[0], 1, bs[2], 1])
     w_add = tf.tile(tf.reshape(tf.range(bs[2]), [1, 1, bs[2], 1]), [bs[0], bs[1], 1, 1])
     offsets = offsets - tf.concat([h_add, w_add], axis=3)
     # to flow image
+    # [16, 32, 32, 1]
     flow = flow_to_image_tf(offsets)
     # # case2: visualize which pixels are attended
     # flow = highlight_flow_tf(offsets * tf.cast(mask, tf.int32))
     if rate != 1:
+        # [16, 64, 64, 1]
         flow = resize(flow, scale=rate, func=tf.image.resize_bilinear)
     return y, flow
 
