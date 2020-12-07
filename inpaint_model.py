@@ -44,6 +44,7 @@ class InpaintCAModel(Model):
         else:
             raise ValueError('Unexpected shape of input x.', x.shape)
         x = tf.concat([x, ones_x, ones_x*mask], axis=3)
+        # x = tf.concat([x, ones_x*mask], axis=3)
 
         # two stage network
         cnum = 48
@@ -112,8 +113,8 @@ class InpaintCAModel(Model):
             x = gen_conv(x, 1, 3, 1, activation=None, name='allconv17')
             x = tf.nn.tanh(x)
             x_stage2 = x
-        # return x_stage1, x_stage2, offset_flow
-        return x_stage1, x_stage2, None
+        return x_stage1, x_stage2, offset_flow
+        # return x_stage1, x_stage2, None
 
     def build_sn_patch_gan_discriminator(self, x, reuse=False, training=True):
         with tf.variable_scope('sn_patch_gan', reuse=reuse):
@@ -150,7 +151,7 @@ class InpaintCAModel(Model):
             raise ValueError('Type error for filetype.')
         # generate mask, 1 represents masked point
         bbox = random_bbox(FLAGS)
-        regular_mask, box = bbox2mask(FLAGS, bbox, name='mask_c')
+        regular_mask = bbox2mask(FLAGS, bbox, name='mask_c')
         ''' Tested without irregular mask
         irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
         mask = tf.cast(
@@ -163,8 +164,11 @@ class InpaintCAModel(Model):
         '''
         mask = tf.cast(regular_mask, tf.float32)
         # Initialize mask part with value on the left of mask.
-        batch_incomplete = mask_part_initialize_tf(FLAGS, batch_pos, mask, box)
-
+        if FLAGS.mask_initialize is True:
+            batch_maskpart = batch_pos*(1.-mask)
+            batch_incomplete = mask_part_initialize_tf(batch_pos, mask)
+        else:
+            batch_incomplete = batch_pos*(1.-mask)
 
         if FLAGS.guided:
             edge = edge * mask
@@ -190,10 +194,20 @@ class InpaintCAModel(Model):
                     batch_complete]
             else:
                 viz_img = [batch_pos, batch_incomplete, batch_complete]
+            # If the mask is initialized with other values, append this for obvious observation.
+            if FLAGS.mask_initialize is True:
+                viz_img.append(batch_maskpart)
+            if FLAGS.viz_coarse is True:
+                viz_img.append(x1)
             if offset_flow is not None:
-                viz_img.append(
-                    resize(offset_flow, scale=4,
-                           func=tf.image.resize_bilinear))
+                if batch_pos.shape[1] == 3:
+                    viz_img.append(
+                        resize(offset_flow, scale=4,
+                            func=tf.image.resize_bilinear))
+                else:
+                    images_summary(
+                        offset_flow,
+                        'raw_incomplete_predicted_complete_flow', FLAGS.viz_max_out)
             images_summary(
                 tf.concat(viz_img, axis=2),
                 'raw_incomplete_predicted_complete', FLAGS.viz_max_out)
@@ -236,7 +250,7 @@ class InpaintCAModel(Model):
             batch_data, edge = batch_data
             edge = edge[:, :, :, 0:1] / 255.
             edge = tf.cast(edge > FLAGS.edge_threshold, tf.float32)
-        regular_mask, box = bbox2mask(FLAGS, bbox, name='mask_c')
+        regular_mask = bbox2mask(FLAGS, bbox, name='mask_c')
         ''' Tested without irregular mask
         irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
         mask = tf.cast(
@@ -254,8 +268,12 @@ class InpaintCAModel(Model):
             batch_pos = batch_data * 2. - 1.
         else:
             raise ValueError('Type error for filetype.')
-        # batch_incomplete = batch_pos*(1.-mask)
-        batch_incomplete = mask_part_initialize_tf(FLAGS, batch_pos, mask, box)
+
+        if FLAGS.mask_initialize is True:
+            batch_incomplete = mask_part_initialize_tf(batch_pos, mask)
+        else:
+            batch_incomplete = batch_pos*(1.-mask)
+
         if FLAGS.guided:
             edge = edge * mask
             xin = tf.concat([batch_incomplete, edge], axis=3)
@@ -279,9 +297,20 @@ class InpaintCAModel(Model):
 
         # Set to None in order to debug for the channel inconsistency.
         if offset_flow is not None:
+            if batch_pos.shape[1] == 3:
+                viz_img.append(
+                    resize(offset_flow, scale=4,
+                        func=tf.image.resize_bilinear))
+            else:
+                images_summary(
+                    offset_flow,
+                    name+'_raw_incomplete_complete_flow', FLAGS.viz_max_out)
+        '''
+        if offset_flow is not None:
             viz_img.append(
                 resize(offset_flow, scale=4,
                        func=tf.image.resize_bilinear))
+        '''
         images_summary(
             tf.concat(viz_img, axis=2),
             name+'_raw_incomplete_complete', FLAGS.viz_max_out)
@@ -320,7 +349,11 @@ class InpaintCAModel(Model):
             raise ValueError('Type error for filetype.')
         # batch_incomplete = batch_pos * (1. - masks)
         # The mask should follow the rule in inpaint.yml
-        batch_incomplete = mask_part_initialize_tf(FLAGS, batch_pos, mask, box)
+        if FLAGS.mask_initialize is True:
+            batch_incomplete = mask_part_initialize_tf(batch_pos, mask)
+        else:
+            batch_incomplete = batch_pos * (1. - masks)
+
         if FLAGS.guided:
             edge = edge * masks[:, :, :, 0:1]
             xin = tf.concat([batch_incomplete, edge], axis=3)
