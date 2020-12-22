@@ -45,9 +45,17 @@ if __name__ == "__main__":
         file_basename = op.basename(filename).split('.')[0].split('_origin')[0]
         for anyshape in shape:
             file_shape = file_basename + '_' + anyshape
+            error_filename = op.join(output_pth, f'{file_shape}_mean-l1.txt')
+            if op.isfile(error_filename): continue
             error_list = []
-            with imageio.get_writer(op.join(png_pth, f'{file_shape}.gif'), mode='I', duration=0.2) as writer:
+            gif_name = op.join(png_pth, f'{file_shape}.gif')
+            # if op.isfile(gif_name): continue
+            with imageio.get_writer(gif_name, mode='I', duration=0.2) as writer:
                 for output in tqdm(sorted(Path(audio_pth).glob(f'{file_shape}*.wav'))):
+                    png_name = op.basename(output).split('.')[0] + '.png'
+                    png_name = op.join(png_pth, png_name)
+                    if op.isfile(png_name): continue
+
                     inpainted_waveform, sr = torchaudio.load(output, normalization=True)
                     diff = torch.mean(abs(inpainted_waveform - origin_waveform))
                     err_value = diff.item()
@@ -55,16 +63,20 @@ if __name__ == "__main__":
 
                     wave_pack = np.concatenate((origin_waveform, inpainted_waveform), axis=0)
 
-                    plt.figure()
-                    plt.ylim(-0.5, 0.5)
-                    plt.plot(wave_pack[0], 'b', wave_pack[1], 'r')
                     png_name = op.basename(output).split('.')[0] + '.png'
                     png_name = op.join(png_pth, png_name)
-                    plt.savefig(png_name)
+                    if op.isfile(png_name):
+                        image = imageio.imread(png_name)
+                        writer.append_data(image)
+                    else:
+                        plt.figure()
+                        plt.ylim(-0.5, 0.5)
+                        plt.plot(wave_pack[0], 'b', wave_pack[1], 'r')
+                        plt.savefig(png_name)
 
-                    image = imageio.imread(png_name)
-                    writer.append_data(image)
-            error_filename = op.join(output_pth, f'{file_shape}_mean-l1.txt')
+                        image = imageio.imread(png_name)
+                        writer.append_data(image)
+            # error_filename = op.join(output_pth, f'{file_shape}_mean-l1.txt')
             with open(error_filename, 'w') as f:
                 for index in error_list:
                     f.write(str(index)+'\n')

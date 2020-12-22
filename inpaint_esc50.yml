@@ -7,12 +7,12 @@ memory_per_job: 32  # number of gpus each job need
 gpu_type: 'nvidia-tesla-v100'
 
 # parameters
-name: esc50_gated_conv_v100  # any name
+name: audioset_gated_conv_v100  # any name
 model_restore: ''  # logs/places2_gated_conv
-dataset: 'esc50'  # 'tmnist', 'dtd', 'places2', 'celeba', 'imagenet', 'cityscapes'
+dataset: 'audioset'  # 'tmnist', 'dtd', 'places2', 'celeba', 'imagenet', 'cityscapes'
 random_crop: False  # Set to false when dataset is 'celebahq', meaning only resize the images to img_shapes, instead of crop img_shapes from a larger raw image. This is useful when you train on images with different resolutions like places2. In these cases, please set random_crop to true.
 val: True  # true if you want to view validation results in tensorboard
-log_dir: logs/cur/full_model_esc50_15seg_time_mask_only_with_brush
+log_dir: logs/full_model_audioset_15seg_time_mask_only_test
 
 gan: 'sngan'
 gan_loss_alpha: 1.
@@ -24,15 +24,13 @@ padding: 'SAME'
 # training
 train_spe: 4000
 max_iters: 100000000
-viz_max_out: 6
+viz_max_out: 10
 val_psteps: 2000
 NUM_GPUS: 2
 GPU_ID: [0, 1]
 log_progress: True
 mask_initialize: False
 viz_coarse: True
-viz_audio: True
-viz_flow_sep: True
 
 # audio
 sr: 44100

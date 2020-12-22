@@ -7,11 +7,14 @@ import tensorflow as tf
 from tensorflow.contrib.framework.python.ops import add_arg_scope
 from PIL import Image, ImageDraw
 
+from utils.audio import toAudio_2amp_denorm
+
 from libs.neuralgym.neuralgym.ops.layers import resize
 from libs.neuralgym.neuralgym.ops.layers import *
 from libs.neuralgym.neuralgym.ops.loss_ops import *
 from libs.neuralgym.neuralgym.ops.gan_ops import *
 from libs.neuralgym.neuralgym.ops.summary_ops import *
+
 
 
 logger = logging.getLogger()
@@ -201,6 +204,35 @@ def mask_part_initialize_tf(batch_pos, mask, name='mask_part_initialize'):
             (tf.float32), stateful=False)
         batch_incomplete.set_shape(batch_pos.get_shape().as_list()[0:-1]+[1])
     return batch_incomplete
+
+
+def to_waveform(batch_complete):
+    audio_set = []
+    for complete in batch_complete:
+        # toAudio..(numpy)
+        audio = toAudio_2amp_denorm(complete)
+        audio_set.append(audio)
+    return audio_set
+
+
+def to_waveform_tf(batch_complete, name='to_waveform'):
+    """Generate waveform from spectrogram.
+
+    Args:
+        batch_complete: [b, H, W, 1]
+
+    Returns:
+        tf.Tensor: output with shape [16, H, W, 1]
+
+    """
+    with tf.variable_scope(name), tf.device('/cpu:0'):
+        b, h, w, c = batch_complete.shape
+        audio_set = tf.py_func(
+            to_waveform,
+            [batch_complete],
+            [tf.float32]*b, stateful=False)
+        # audio_set.set_shape(audio_set.get_shape().as_list()[1:-1])
+    return audio_set
 
 
 def brush_stroke_mask(FLAGS, name='mask'):

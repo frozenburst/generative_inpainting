@@ -6,8 +6,11 @@ from libs.neuralgym import neuralgym as ng
 import tensorflow as tf
 from tensorflow.contrib.framework.python.ops import arg_scope
 
+from utils.audio import toAudio_2amp_denorm
+
 from libs.neuralgym.neuralgym.models import Model
 from libs.neuralgym.neuralgym.ops.summary_ops import scalar_summary, images_summary
+from libs.neuralgym.neuralgym.ops.summary_ops import audio_summary
 from libs.neuralgym.neuralgym.ops.summary_ops import gradients_summary
 from libs.neuralgym.neuralgym.ops.layers import flatten, resize
 from libs.neuralgym.neuralgym.ops.gan_ops import gan_hinge_loss
@@ -17,6 +20,7 @@ from inpaint_ops import gen_conv, gen_deconv, dis_conv
 from inpaint_ops import random_bbox, bbox2mask, local_patch, brush_stroke_mask
 from inpaint_ops import resize_mask_like, contextual_attention
 from inpaint_ops import mask_part_initialize_tf
+from inpaint_ops import to_waveform_tf
 
 logger = logging.getLogger()
 
@@ -152,7 +156,7 @@ class InpaintCAModel(Model):
         # generate mask, 1 represents masked point
         bbox = random_bbox(FLAGS)
         regular_mask = bbox2mask(FLAGS, bbox, name='mask_c')
-        ''' Tested without irregular mask
+
         irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
         mask = tf.cast(
             tf.logical_or(
@@ -161,7 +165,6 @@ class InpaintCAModel(Model):
             ),
             tf.float32
         )
-        '''
         mask = tf.cast(regular_mask, tf.float32)
         # Initialize mask part with value on the left of mask.
         if FLAGS.mask_initialize is True:
@@ -199,18 +202,35 @@ class InpaintCAModel(Model):
                 viz_img.append(batch_maskpart)
             if FLAGS.viz_coarse is True:
                 viz_img.append(x1)
+
+            name = 'raw_incomplete_predicted_complete'
             if offset_flow is not None:
-                if batch_pos.shape[1] == 3:
-                    viz_img.append(
-                        resize(offset_flow, scale=4,
-                            func=tf.image.resize_bilinear))
-                else:
+                # The offset flow is not compatible with input data with channel 1:3
+                # Show separately.
+                offset_flow = resize(offset_flow, scale=4,
+                                    func=tf.image.resize_bilinear)
+                if FLAGS.viz_flow_sep is True:
                     images_summary(
                         offset_flow,
-                        'raw_incomplete_predicted_complete_flow', FLAGS.viz_max_out)
+                        name+'flow', FLAGS.viz_max_out)
+                else: # Still got bugs #########
+                    if viz_img[0].shape != offset_flow.shape:
+                        viz_img_c3 = [tf.image.grayscale_to_rgb(img) for img in viz_img]
+                        viz_img = viz_img_c3
+                    viz_img.append(offset_flow)
+            viz_img = tf.concat(viz_img, axis=2)
             images_summary(
-                tf.concat(viz_img, axis=2),
-                'raw_incomplete_predicted_complete', FLAGS.viz_max_out)
+                viz_img,
+                name, FLAGS.viz_max_out)
+
+        # Summary of audio from output spectrogram
+        #   audio_summary(wav, sr, maxout, name)
+        # name = 'raw_incomplete_predicted_complete'
+        if summary and FLAGS.viz_audio:
+            audio_set = to_waveform_tf(batch_complete)
+            # audio_set = tf.concat(audio_set, axis=1)
+            audio_summary(audio_set, FLAGS.sr, FLAGS.viz_max_out, name)
+
 
         # gan
         batch_pos_neg = tf.concat([batch_pos, batch_complete], axis=0)
@@ -295,25 +315,30 @@ class InpaintCAModel(Model):
         else:
             viz_img = [batch_pos, batch_incomplete, batch_complete]
 
-        # Set to None in order to debug for the channel inconsistency.
+        infer_name = name+'_raw_incomplete_complete'
         if offset_flow is not None:
-            if batch_pos.shape[1] == 3:
-                viz_img.append(
-                    resize(offset_flow, scale=4,
-                        func=tf.image.resize_bilinear))
-            else:
+            offset_flow = resize(offset_flow, scale=4,
+                                func=tf.image.resize_bilinear)
+            if FLAGS.viz_flow_sep is True:
                 images_summary(
                     offset_flow,
-                    name+'_raw_incomplete_complete_flow', FLAGS.viz_max_out)
-        '''
-        if offset_flow is not None:
-            viz_img.append(
-                resize(offset_flow, scale=4,
-                       func=tf.image.resize_bilinear))
-        '''
+                    infer_name+'flow', FLAGS.viz_max_out)
+            # only the shape bhwc, c=3
+            if offset_flow.shape[1] == 3 and (FLAGS.viz_flow_sep is False):
+                viz_img_c3 = [tf.image.grayscale_to_rgb(img) for img in viz_img]
+                viz_img = viz_img_c3
+                viz_img.append(offset_flow)
+        viz_img = tf.concat(viz_img, axis=2)
         images_summary(
-            tf.concat(viz_img, axis=2),
-            name+'_raw_incomplete_complete', FLAGS.viz_max_out)
+            viz_img,
+            infer_name, FLAGS.viz_max_out)
+
+        # summary of audio from output spectrogram
+        # audio_summary(wav, sr, maxout, name)
+        if FLAGS.viz_audio:
+            audio_set = to_waveform_tf(batch_complete)
+            audio_summary(audio_set, FLAGS.sr, FLAGS.viz_max_out, infer_name)
+
         return batch_complete
 
     def build_static_infer_graph(self, FLAGS, batch_data, name):

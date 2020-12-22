@@ -173,6 +173,9 @@ if __name__ == "__main__":
         mask_type = 'square'
     os.chdir(proj_pth)
 
+    if op.isdir(output_pth) is False:
+        os.mkdir(output_pth)
+
     for i, filename in enumerate(sorted(Path(data_pth).glob('*.npy'))):
         print(i, filename)
 
