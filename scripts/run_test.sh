@@ -54,11 +54,11 @@ python spec_diff.py \
 echo "Diff process finish."
 
 echo "Transfer the spectrogram to audio..."
-pyhton 2audio.py \
+python 2audio.py \
     --spec_pth="${output_pth}"
 echo "Finish!"
 
-#echo "Anamated the diff of audio transformation"
+echo "Anamated the diff of audio transformation"
 #python audio2png_loss.py \
 #    --data_pth="${data_pth}"
 #    --audio_pth="${output_pth}/audio"

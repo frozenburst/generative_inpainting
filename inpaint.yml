@@ -30,6 +30,7 @@ NUM_GPUS: 2
 GPU_ID: [0, 1]
 log_progress: True
 mask_initialize: False
+with_ir_mask: True
 viz_coarse: True
 viz_audio: True
 viz_flow_sep: True

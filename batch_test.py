@@ -38,8 +38,14 @@ if __name__ == "__main__":
     sess = tf.Session(config=sess_config)
 
     model = InpaintCAModel()
-    input_image_ph = tf.placeholder(
-        tf.float32, shape=(1, args.image_height, args.image_width*2, 3))
+    if FLAGS.filetype == 'image':
+        input_image_ph = tf.placeholder(
+            tf.float32, shape=(1, args.image_height, args.image_width*2, 3))
+    elif FLAGS.filetype == 'npy':
+        input_image_ph = tf.placeholder(
+            tf.float32, shape=(1, args.image_height, args.image_width*2, 1))
+    else: raise ValueError('Type error for filetype.')
+
     output = model.build_server_graph(FLAGS, input_image_ph)
     if FLAGS.filetype == 'image':
         output = (output + 1.) * 127.5
@@ -49,8 +55,8 @@ if __name__ == "__main__":
         output = (output + 1.) / 2.
         output = tf.reverse(output, [-1])
         output = tf.saturate_cast(output, tf.float32)
-    else:
-        raise ValueError('Type error for filetype.')
+    else: raise ValueError('Type error for filetype.')
+
     vars_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
     assign_ops = []
     for var in vars_list:
@@ -72,13 +78,17 @@ if __name__ == "__main__":
 
         if FLAGS.filetype == 'image':
             image = cv2.imread(image)
+            mask = cv2.imread(mask)
+            image = cv2.resize(image, (args.image_width, args.image_height))
+            mask = cv2.resize(mask, (args.image_width, args.image_height))
         elif FLAGS.filetype == 'npy':
             image = np.load(image)
+            mask = np.load(mask)
         else:
             raise ValueError('Type error for filetype.')
-        mask = cv2.imread(mask)
-        image = cv2.resize(image, (args.image_width, args.image_height))
-        mask = cv2.resize(mask, (args.image_width, args.image_height))
+        # mask = cv2.imread(mask)
+        # image = cv2.resize(image, (args.image_width, args.image_height))
+        # mask = cv2.resize(mask, (args.image_width, args.image_height))
         # cv2.imwrite(out, image*(1-mask/255.) + mask)
         # # continue
         # image = np.zeros((128, 256, 3))

@@ -156,16 +156,17 @@ class InpaintCAModel(Model):
         # generate mask, 1 represents masked point
         bbox = random_bbox(FLAGS)
         regular_mask = bbox2mask(FLAGS, bbox, name='mask_c')
-
-        irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
-        mask = tf.cast(
-            tf.logical_or(
-                tf.cast(irregular_mask, tf.bool),
-                tf.cast(regular_mask, tf.bool),
-            ),
-            tf.float32
-        )
-        mask = tf.cast(regular_mask, tf.float32)
+        if FLAGS.with_ir_mask:
+            irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
+            mask = tf.cast(
+                tf.logical_or(
+                    tf.cast(irregular_mask, tf.bool),
+                    tf.cast(regular_mask, tf.bool),
+                ),
+                tf.float32
+            )
+        else:
+            mask = tf.cast(regular_mask, tf.float32)
         # Initialize mask part with value on the left of mask.
         if FLAGS.mask_initialize is True:
             batch_maskpart = batch_pos*(1.-mask)
@@ -271,17 +272,17 @@ class InpaintCAModel(Model):
             edge = edge[:, :, :, 0:1] / 255.
             edge = tf.cast(edge > FLAGS.edge_threshold, tf.float32)
         regular_mask = bbox2mask(FLAGS, bbox, name='mask_c')
-        ''' Tested without irregular mask
-        irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
-        mask = tf.cast(
-            tf.logical_or(
-                tf.cast(irregular_mask, tf.bool),
-                tf.cast(regular_mask, tf.bool),
-            ),
-            tf.float32
-        )
-        '''
-        mask = tf.cast(regular_mask, tf.float32)
+        if FLAGS.with_ir_mask:
+            irregular_mask = brush_stroke_mask(FLAGS, name='mask_c')
+            mask = tf.cast(
+                tf.logical_or(
+                    tf.cast(irregular_mask, tf.bool),
+                    tf.cast(regular_mask, tf.bool),
+                ),
+                tf.float32
+            )
+        else:
+            mask = tf.cast(regular_mask, tf.float32)
         if FLAGS.filetype == 'image':
             batch_pos = batch_data / 127.5 - 1.
         elif FLAGS.filetype == 'npy':
