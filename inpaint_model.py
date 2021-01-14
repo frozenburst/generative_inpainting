@@ -30,7 +30,7 @@ class InpaintCAModel(Model):
         super().__init__('InpaintCAModel')
 
     def build_inpaint_net(self, x, mask, reuse=False,
-                          training=True, padding='SAME', name='inpaint_net'):
+                          training=True, padding='SAME', name='inpaint_net', fuse=False):
         """Inpaint network.
 
         Args:
@@ -102,7 +102,7 @@ class InpaintCAModel(Model):
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv5')
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv6',
                                 activation=tf.nn.relu)
-            x, offset_flow = contextual_attention(x, x, mask_s, 3, 1, rate=2)
+            x, offset_flow = contextual_attention(x, x, mask_s, 3, 1, rate=2, fuse=fuse)
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv9')
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv10')
             pm = x
@@ -151,6 +151,8 @@ class InpaintCAModel(Model):
         elif FLAGS.filetype == 'npy':
             # Makes 0~1 to -1~1
             batch_pos = batch_data * 2. - 1.
+            if FLAGS.transpose:
+                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
         # generate mask, 1 represents masked point
@@ -181,7 +183,7 @@ class InpaintCAModel(Model):
             xin = batch_incomplete
         x1, x2, offset_flow = self.build_inpaint_net(
             xin, mask, reuse=reuse, training=training,
-            padding=FLAGS.padding)
+            padding=FLAGS.padding, fuse=FLAGS.fuse)
         batch_predicted = x2
         losses = {}
         # apply mask and complete image
@@ -287,6 +289,8 @@ class InpaintCAModel(Model):
             batch_pos = batch_data / 127.5 - 1.
         elif FLAGS.filetype == 'npy':
             batch_pos = batch_data * 2. - 1.
+            if FLAGS.transpose:
+                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
 
@@ -371,6 +375,8 @@ class InpaintCAModel(Model):
             batch_pos = batch_raw / 127.5 - 1.
         elif FLAGS.filetype == 'npy':
             batch_pos = batch_raw * 2. - 1.
+            if FLAGS.transpose:
+                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
         # batch_incomplete = batch_pos * (1. - masks)
@@ -391,4 +397,6 @@ class InpaintCAModel(Model):
         batch_predict = x2
         # apply mask and reconstruct
         batch_complete = batch_predict*masks + batch_incomplete*(1-masks)
+        if FLAGS.transpose:
+            batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         return batch_complete
