@@ -3,8 +3,6 @@
 #####
 # After the training of genrative model.
 
-# Use the "batch_test_genList.py" to generate the file list for batch test.
-# Use the "batch_test_loss_measure.py" to measure the loss of batch test output.
 # Use the "2audio.py" transfer all the outout spectrogram to waveform.
 
 # The last one cannot work in twcc node, which is without -X forward for plt.
@@ -20,39 +18,29 @@ checkpoint="/work/r08922a13/generative_inpainting/logs/cur/full_model_esc50_15se
 output_pth="/work/r08922a13/generative_inpainting/examples/esc50/mag_seg15_256_all/train_m52_with_brush"
 data_pth="/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/spectrogram_15seg"
 mask_pth="/work/r08922a13/generative_inpainting/examples/esc50/mask_256/mask_time_052.npy"
-file_list_pth="/work/r08922a13/generative_inpainting/data/esc50/spec_15seg/train_shuffled.flist"
+# file_list_pth="/work/r08922a13/generative_inpainting/data/esc50/spec_15seg/train_shuffled.flist"
 # train_shuffled.flist(train), validation_static_view.flist(test)
 
 # other settings
 #mask_type="time"  # [time, square]
-loss_type="mean_l1"    # [l1, mean_l1, psnr]
+#loss_type="mean_l1"    # [l1, mean_l1, psnr]
 imageH=256
 imageW=256
 
 
 # Processing parts.
-echo "Generate the file list of batch test."
-python batch_test_genList.py \
-    --file_list_pth "${file_list_pth}" \
-    --output_pth "${output_pth}" \
-    --mask_pth "${mask_pth}"
-echo "Generation Finish."
+echo "Generate without mask output"
 
-echo "Start batch test..."
+
+
+echo "Start testing..."
 cd ${proj_pth}
-python batch_test.py \
-    --flist "${output_pth}/batch_test_list.txt" \
-    --image_height ${imageH} \
-    --image_width ${imageW} \
-    --checkpoint_dir "${checkpoint}"
+python test.py \
+    --image "${data_pth}" \
+    --mask "${mask_pth}" \
+    --output "${output_pth}" \
+    --checkpoint "${checkpoint}"
 cd "${proj_pth}/scripts"
-
-echo "Strat to test the model... with loss measure..."
-python batch_test_loss_measure.py \
-    --output_pth "${output_pth}" \
-    --loss_type "${loss_type}" \
-    --ref_spec_pth "${data_pth}"
-echo "Test of time mask finish."
 
 echo "Save npy spec as png file..."
 python npy2png.py \

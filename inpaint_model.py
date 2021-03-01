@@ -151,8 +151,6 @@ class InpaintCAModel(Model):
         elif FLAGS.filetype == 'npy':
             # Makes 0~1 to -1~1
             batch_pos = batch_data * 2. - 1.
-            if FLAGS.transpose:
-                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
         # generate mask, 1 represents masked point
@@ -169,6 +167,11 @@ class InpaintCAModel(Model):
             )
         else:
             mask = tf.cast(regular_mask, tf.float32)
+
+        if FLAGS.transpose:
+            batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
+            mask = tf.transpose(mask, perm=[0, 2, 1, 3])
+
         # Initialize mask part with value on the left of mask.
         if FLAGS.mask_initialize is True:
             batch_maskpart = batch_pos*(1.-mask)
@@ -189,8 +192,11 @@ class InpaintCAModel(Model):
         # apply mask and complete image
         batch_complete = batch_predicted*mask + batch_incomplete*(1.-mask)
         # local patches
-        losses['ae_loss'] = FLAGS.l1_loss_alpha * tf.reduce_mean(tf.abs(batch_pos - x1))
-        losses['ae_loss'] += FLAGS.l1_loss_alpha * tf.reduce_mean(tf.abs(batch_pos - x2))
+        # -1 ~ 1 to 0 ~ 2
+        #import pdb; pdb.set_trace()
+        attention_weight = tf.nn.elu(batch_pos) + 1.
+        losses['ae_loss'] = FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x1), attention_weight))
+        losses['ae_loss'] += FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x2), attention_weight))
         if summary:
             scalar_summary('losses/ae_loss', losses['ae_loss'])
             if FLAGS.guided:
@@ -289,10 +295,12 @@ class InpaintCAModel(Model):
             batch_pos = batch_data / 127.5 - 1.
         elif FLAGS.filetype == 'npy':
             batch_pos = batch_data * 2. - 1.
-            if FLAGS.transpose:
-                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
+
+        if FLAGS.transpose:
+            batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
+            mask = tf.transpose(mask, perm=[0, 2, 1, 3])
 
         if FLAGS.mask_initialize is True:
             batch_incomplete = mask_part_initialize_tf(batch_pos, mask)
@@ -344,6 +352,8 @@ class InpaintCAModel(Model):
             audio_set = to_waveform_tf(batch_complete)
             audio_summary(audio_set, FLAGS.sr, FLAGS.viz_max_out, infer_name)
 
+        if FLAGS.transpose:
+            batch_complete = tf.transpose(batch_complete, perm=[0, 2, 1, 3])
         return batch_complete
 
     def build_static_infer_graph(self, FLAGS, batch_data, name):
@@ -375,10 +385,13 @@ class InpaintCAModel(Model):
             batch_pos = batch_raw / 127.5 - 1.
         elif FLAGS.filetype == 'npy':
             batch_pos = batch_raw * 2. - 1.
-            if FLAGS.transpose:
-                batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
         else:
             raise ValueError('Type error for filetype.')
+
+        if FLAGS.transpose:
+            batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
+            masks = tf.transpose(masks, perm=[0, 2, 1, 3])
+
         # batch_incomplete = batch_pos * (1. - masks)
         # The mask should follow the rule in inpaint.yml
         if FLAGS.mask_initialize is True:
@@ -398,5 +411,5 @@ class InpaintCAModel(Model):
         # apply mask and reconstruct
         batch_complete = batch_predict*masks + batch_incomplete*(1-masks)
         if FLAGS.transpose:
-            batch_pos = tf.transpose(batch_pos, perm=[0, 2, 1, 3])
+            batch_complete = tf.transpose(batch_complete, perm=[0, 2, 1, 3])
         return batch_complete
