@@ -82,7 +82,7 @@ height: 255
 width: 96                   # max of mask width
 max_delta_height: 0         # max decrease of mask side
 max_delta_width: 64
-batch_size: 16
+batch_size: 2
 vertical_margin: 0
 horizontal_margin: 97       # width + 1
 

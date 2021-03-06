@@ -25,6 +25,7 @@ from inpaint_ops import random_bbox, bbox2mask, local_patch, brush_stroke_mask
 from inpaint_ops import resize_mask_like, contextual_attention
 from inpaint_ops import mask_part_initialize_tf
 from inpaint_ops import to_waveform_tf
+# from inpaint_ops import model_predict_tf
 
 logger = logging.getLogger()
 
@@ -36,8 +37,23 @@ class InpaintCAModel(Model):
         keras_manager.start()
         self.pretrained_model_pth = 'image_classification/saved_models/inter_model.h5'
         self.pretrained_classify_model = keras_manager.KerasModelForThreads()
-        #self.pretrained_classify_model.load_model(pretrained_model_pth)
-        #print(self.pretrained_classify_model.summary())
+        self.pretrained_classify_model.load_model(self.pretrained_model_pth)
+        print(self.pretrained_classify_model.summary())
+
+    def model_predict(self, batch_x, batch_y):
+        perceptual_x = self.pretrained_classify_model.predict_output(batch_x)
+        perceptual_y = self.pretrained_classify_model.predict_output(batch_y)
+        return perceptual_x - perceptual_y
+
+    def model_predict_tf(self, batch_x, batch_y, name='model_predict'):
+        with tf.variable_scope(name), tf.device('/cpu:0'):
+            b, h, w, c = batch_x.shape
+            perceptual_set = tf.py_func(
+                self.model_predict,
+                [batch_x, batch_y],
+                (tf.float32), stateful=False)
+        perceptual_set.set_shape(batch_x.get_shape().as_list()[0:-1]+[1])
+        return perceptual_set
 
     def build_inpaint_net(self, x, mask, reuse=False,
                           training=True, padding='SAME', name='inpaint_net', fuse=False):
@@ -149,19 +165,6 @@ class InpaintCAModel(Model):
                 batch, reuse=reuse, training=training)
             return d
 
-    #def build_xception_classifier(self, reuse=False, training=False):
-    #    with tf.variable_scope('xception', reuse=reuse):
-    #        return xception(50, 256, 256, training=training)
-
-    #def build_classifier(self, reuse=False, training=False):
-    #    with tf.variable_scope('classifier', reuse=reuse):
-    #        c = self.build_xception_classifier(
-    #                reuse=reuse, training=training
-    #            )
-    #        c.load_weights('./image_classification/checkpoints/xception_01/save_at_10.h5')
-    #        layer_name = 'global_average_pooling2d'
-    #    return kModel(inputs=c.input, outputs=c.get_layer(layer_name).output)
-
     def build_graph_with_losses(
             self, FLAGS, batch_data, training=True, summary=False,
             reuse=False):
@@ -223,14 +226,10 @@ class InpaintCAModel(Model):
 
         # perceptual loss from pretrained networks
         if FLAGS.perceptual is True:
-            #xception_model = self.build_classifier(reuse=False, training=False)
-            #origin_perceptual = xception_model.predict(batch_pos, steps=1)
-            #compare_perceptual = xception_model.predict(batch_complete, steps=1)
-            #print(batch_pos.shape, batch_complete.shape)
-            origin_perceptual = self.pretrained_classify_model.load_model_and_predict(self.pretrained_model_pth, batch_pos)
-            compare_perceptual = self.pretrained_classify_model.load_model_and_predict(self.pretrained_model_pth, batch_complete)
-            import pdb; pdb.set_trace()
-            losses['perceptual_loss'] = FLAGS.perceptual_alpha * tf.softmax(tf.reduce_mean(tf.abs(origin_perceptual - compare_perceptual)))
+            #import pdb; pdb.set_trace()
+            perceptual = self.model_predict_tf(batch_pos, batch_complete)
+            #compare_perceptual = self.model_predict_tf(batch_complete)
+            losses['perceptual_loss'] = FLAGS.perceptual_alpha * tf.reduce_mean(tf.abs(perceptual))
 
 
         if summary:

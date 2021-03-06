@@ -10,10 +10,10 @@ class KerasModelForThreads():
         self.lock = Lock()
         self.model = None
 
-    def load_model_and_predict(self, model_pth, x):
+    def load_model(self, model_pth):
         self.model = keras.models.load_model(model_pth)
         #with self.lock:
-        return self.model.predict(x, steps=1)
+        #    return self.model.predict(x, steps=1)
 
     def predict_output(self, x_pred):
         with self.lock:
