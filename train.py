@@ -5,6 +5,8 @@ import tensorflow as tf
 from libs.neuralgym import neuralgym as ng
 
 from inpaint_model import InpaintCAModel
+from image_classification.models import xception
+from tensorflow.keras.models import Model
 
 
 def multigpu_graph_def(model, FLAGS, data, gpu_id=0, loss_type='g'):

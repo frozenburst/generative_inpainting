@@ -5,8 +5,12 @@ import cv2
 from libs.neuralgym import neuralgym as ng
 import tensorflow as tf
 from tensorflow.contrib.framework.python.ops import arg_scope
+from tensorflow import keras
 
 from utils.audio import toAudio_2amp_denorm
+from predicting_model import KerasManager
+#from image_classification.models import xception
+#from tensorflow.keras.models import Model as kModel
 
 from libs.neuralgym.neuralgym.models import Model
 from libs.neuralgym.neuralgym.ops.summary_ops import scalar_summary, images_summary
@@ -28,6 +32,12 @@ logger = logging.getLogger()
 class InpaintCAModel(Model):
     def __init__(self):
         super().__init__('InpaintCAModel')
+        keras_manager = KerasManager()
+        keras_manager.start()
+        self.pretrained_model_pth = 'image_classification/saved_models/inter_model.h5'
+        self.pretrained_classify_model = keras_manager.KerasModelForThreads()
+        #self.pretrained_classify_model.load_model(pretrained_model_pth)
+        #print(self.pretrained_classify_model.summary())
 
     def build_inpaint_net(self, x, mask, reuse=False,
                           training=True, padding='SAME', name='inpaint_net', fuse=False):
@@ -139,6 +149,19 @@ class InpaintCAModel(Model):
                 batch, reuse=reuse, training=training)
             return d
 
+    #def build_xception_classifier(self, reuse=False, training=False):
+    #    with tf.variable_scope('xception', reuse=reuse):
+    #        return xception(50, 256, 256, training=training)
+
+    #def build_classifier(self, reuse=False, training=False):
+    #    with tf.variable_scope('classifier', reuse=reuse):
+    #        c = self.build_xception_classifier(
+    #                reuse=reuse, training=training
+    #            )
+    #        c.load_weights('./image_classification/checkpoints/xception_01/save_at_10.h5')
+    #        layer_name = 'global_average_pooling2d'
+    #    return kModel(inputs=c.input, outputs=c.get_layer(layer_name).output)
+
     def build_graph_with_losses(
             self, FLAGS, batch_data, training=True, summary=False,
             reuse=False):
@@ -197,8 +220,25 @@ class InpaintCAModel(Model):
         attention_weight = tf.nn.elu(batch_pos) + 1.
         losses['ae_loss'] = FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x1), attention_weight))
         losses['ae_loss'] += FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x2), attention_weight))
+
+        # perceptual loss from pretrained networks
+        if FLAGS.perceptual is True:
+            #xception_model = self.build_classifier(reuse=False, training=False)
+            #origin_perceptual = xception_model.predict(batch_pos, steps=1)
+            #compare_perceptual = xception_model.predict(batch_complete, steps=1)
+            #print(batch_pos.shape, batch_complete.shape)
+            origin_perceptual = self.pretrained_classify_model.load_model_and_predict(self.pretrained_model_pth, batch_pos)
+            compare_perceptual = self.pretrained_classify_model.load_model_and_predict(self.pretrained_model_pth, batch_complete)
+            import pdb; pdb.set_trace()
+            losses['perceptual_loss'] = FLAGS.perceptual_alpha * tf.softmax(tf.reduce_mean(tf.abs(origin_perceptual - compare_perceptual)))
+
+
         if summary:
             scalar_summary('losses/ae_loss', losses['ae_loss'])
+
+            if FLAGS.perceptual is True:
+                scalar_summary('losses/perceptual', losses['perceptual_loss'])
+
             if FLAGS.guided:
                 viz_img = [
                     batch_pos,

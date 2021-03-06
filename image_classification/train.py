@@ -37,30 +37,14 @@ if __name__ == "__main__":
 
     #import pdb; pdb.set_trace()
 
-    model = large(num_classes, image_height, image_width)
+    model = xception(num_classes, image_height, image_width)
 
 
     callbacks = [
         keras.callbacks.ModelCheckpoint("./checkpoints/save_at_{epoch}.h5"),
     ]
-    model.compile(
-        optimizer=keras.optimizers.Adam(1e-3),
-        loss="binary_crossentropy",
-        metrics=["accuracy"],
-    )
-    ''' # vgg
-    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
-    '''
-    '''
-    # others
-    model.compile(optimizer='adam',
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=['accuracy'])
-    '''
 
     print(model.summary())
-
 
     model.fit(train_data, train_labels, batch_size=batch_size, epochs=epochs,
               validation_split=0.1, validation_freq=2, callbacks=callbacks)

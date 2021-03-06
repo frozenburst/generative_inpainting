@@ -7,3 +7,4 @@ libs
 */.ipynb_checkpoints
 image_classification/checkpoints
 image_classification/data
+image_classification/saved_models
