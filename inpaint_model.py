@@ -8,7 +8,7 @@ from tensorflow.contrib.framework.python.ops import arg_scope
 from tensorflow import keras
 
 from utils.audio import toAudio_2amp_denorm
-from predicting_model import KerasManager
+#from predicting_model import KerasManager
 #from image_classification.models import xception
 #from tensorflow.keras.models import Model as kModel
 
@@ -33,11 +33,16 @@ logger = logging.getLogger()
 class InpaintCAModel(Model):
     def __init__(self):
         super().__init__('InpaintCAModel')
+        '''
         keras_manager = KerasManager()
         keras_manager.start()
         self.pretrained_model_pth = 'image_classification/saved_models/inter_model.h5'
         self.pretrained_classify_model = keras_manager.KerasModelForThreads()
         self.pretrained_classify_model.load_model(self.pretrained_model_pth)
+        '''
+        pretrained_model_pth = 'image_classification/saved_models/inter_model.h5'
+        self.pretrained_classify_model = keras.models.load_model(pretrained_model_pth)
+        self.pretrained_classify_model.trainable = False
         print(self.pretrained_classify_model.summary())
 
     def model_predict(self, batch_x, batch_y):
@@ -226,7 +231,6 @@ class InpaintCAModel(Model):
 
         # perceptual loss from pretrained networks
         if FLAGS.perceptual is True:
-            #import pdb; pdb.set_trace()
             perceptual = self.model_predict_tf(batch_pos, batch_complete)
             #compare_perceptual = self.model_predict_tf(batch_complete)
             losses['perceptual_loss'] = FLAGS.perceptual_alpha * tf.reduce_mean(tf.abs(perceptual))
