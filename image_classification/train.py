@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
 
     callbacks = [
-        keras.callbacks.ModelCheckpoint("./checkpoints/save_at_{epoch}.h5"),
+        keras.callbacks.ModelCheckpoint("./checkpoints/tf2_save_at_{epoch}.h5"),
     ]
 
     print(model.summary())

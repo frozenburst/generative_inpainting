@@ -3,15 +3,18 @@
 from pathlib import Path
 from tqdm import tqdm
 
+import torch
 import numpy as np
 import os.path as op
+import librosa
+import math
 import torchaudio
 import torchaudio.transforms as transforms
 
 
 audio_pth = '/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/audio'
 audio_seg_pth = '/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/audio_15seg'
-spec_seg_pth = '/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/spectrogram_15seg'
+spec_seg_pth = '/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/spectrogram_large'
 
 
 class hp:
@@ -23,6 +26,7 @@ class hp:
     max_db = 100
     ref_db = 20
     least_amp = 1e-5
+    min_length = 5
 
 
 def toSpec_db_norm(waveform):
@@ -44,6 +48,26 @@ for filename in tqdm(Path(audio_pth).glob('*.wav')):
     if sr != 44100:
         raise ValueError("Unexpected sample rate:", sr)
 
+    trim, interval = librosa.effects.trim(waveform[0])
+    if trim.shape[0]/sr < hp.min_length:
+        n = math.ceil(hp.min_length*sr / trim.shape[0])
+        trim = np.tile(trim, (n))[:hp.min_length * sr]
+        trim = torch.tensor(trim)
+    #trim = trim[np.newaxis, :]
+
+    patch_length = int(hp.n_fft/2 + 1)
+    spec = toSpec_db_norm(trim)
+    F, L = spec.shape
+    spec = spec[:, :, np.newaxis]
+
+    for i in tqdm(range(L - patch_length)):
+        tmp_spec = spec[:, i:patch_length+i, :]
+        spec_name = op.basename(filename).split('.')[0] + f'_{i}'
+        spec_name = op.join(spec_seg_pth, spec_name)
+        np.save(spec_name, tmp_spec)
+
+
+    """ Deprecated
     t = int(sr * 1.5)
     # 0 ~ 1.5 sec
     if len(waveform[0]) >= sr * 1.5:
@@ -100,3 +124,4 @@ for filename in tqdm(Path(audio_pth).glob('*.wav')):
         spec_name = op.basename(filename).split('.')[0] + '_3'
         spec_name = op.join(spec_seg_pth, spec_name)
         np.save(spec_name, spec)
+        """

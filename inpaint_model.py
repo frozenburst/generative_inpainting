@@ -4,7 +4,10 @@ import logging
 import cv2
 from libs.neuralgym import neuralgym as ng
 import tensorflow as tf
+import numpy as np
 from tensorflow.contrib.framework.python.ops import arg_scope
+from tensorflow.python.keras.backend import set_session
+#from tensorflow.python.keras.models import load_model
 from tensorflow import keras
 
 from utils.audio import toAudio_2amp_denorm
@@ -40,15 +43,26 @@ class InpaintCAModel(Model):
         self.pretrained_classify_model = keras_manager.KerasModelForThreads()
         self.pretrained_classify_model.load_model(self.pretrained_model_pth)
         '''
+
+        """
+        self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
+        self.graph = tf.get_default_graph()
+
         pretrained_model_pth = 'image_classification/saved_models/inter_model.h5'
+        set_session(self.sess)
         self.pretrained_classify_model = keras.models.load_model(pretrained_model_pth)
         self.pretrained_classify_model.trainable = False
         print(self.pretrained_classify_model.summary())
-
+        """
+    """
     def model_predict(self, batch_x, batch_y):
-        perceptual_x = self.pretrained_classify_model.predict_output(batch_x)
-        perceptual_y = self.pretrained_classify_model.predict_output(batch_y)
-        return perceptual_x - perceptual_y
+        batch_concat = np.concatenate((batch_x, batch_y), axis=0)
+        with self.graph.as_default():
+            set_session(self.sess)
+            perceptual_concat = self.pretrained_classify_model.predict(batch_concat)
+        perceptual_x, perceptual_y = np.split(perceptual_concat, 2)
+        diff = perceptual_x - perceptual_y
+        return diff
 
     def model_predict_tf(self, batch_x, batch_y, name='model_predict'):
         with tf.variable_scope(name), tf.device('/cpu:0'):
@@ -57,9 +71,10 @@ class InpaintCAModel(Model):
                 self.model_predict,
                 [batch_x, batch_y],
                 (tf.float32), stateful=False)
-        perceptual_set.set_shape(batch_x.get_shape().as_list()[0:-1]+[1])
+        #perceptual_set.set_shape(batch_x.get_shape().as_list()[0:-1]+[1])
+        perceptual_set.set_shape([b]+[1024])
         return perceptual_set
-
+    """
     def build_inpaint_net(self, x, mask, reuse=False,
                           training=True, padding='SAME', name='inpaint_net', fuse=False):
         """Inpaint network.
@@ -133,7 +148,8 @@ class InpaintCAModel(Model):
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv5')
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv6',
                                 activation=tf.nn.relu)
-            x, offset_flow = contextual_attention(x, x, mask_s, 3, 1, rate=2, fuse=fuse)
+            # testing without CA
+            _, offset_flow = contextual_attention(x, x, mask_s, 3, 1, rate=2, fuse=fuse)
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv9')
             x = gen_conv(x, 4*cnum, 3, 1, name='pmconv10')
             pm = x
@@ -225,22 +241,27 @@ class InpaintCAModel(Model):
         # local patches
         # -1 ~ 1 to 0 ~ 2
         #import pdb; pdb.set_trace()
-        attention_weight = tf.nn.elu(batch_pos) + 1.
+        if FLAGS.attention:
+            attention_weight = tf.nn.elu(batch_pos) + 1.
+        else:
+            attention_weight = 1.
         losses['ae_loss'] = FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x1), attention_weight))
         losses['ae_loss'] += FLAGS.l1_loss_alpha * tf.reduce_mean(tf.multiply(tf.abs(batch_pos - x2), attention_weight))
 
+        """
         # perceptual loss from pretrained networks
         if FLAGS.perceptual is True:
             perceptual = self.model_predict_tf(batch_pos, batch_complete)
             #compare_perceptual = self.model_predict_tf(batch_complete)
+            #import pdb; pdb.set_trace()
             losses['perceptual_loss'] = FLAGS.perceptual_alpha * tf.reduce_mean(tf.abs(perceptual))
-
+        """
 
         if summary:
             scalar_summary('losses/ae_loss', losses['ae_loss'])
 
-            if FLAGS.perceptual is True:
-                scalar_summary('losses/perceptual', losses['perceptual_loss'])
+            #if FLAGS.perceptual is True:
+            #    scalar_summary('losses/perceptual', losses['perceptual_loss'])
 
             if FLAGS.guided:
                 viz_img = [
@@ -309,6 +330,8 @@ class InpaintCAModel(Model):
         losses['g_loss'] = FLAGS.gan_loss_alpha * losses['g_loss']
         if FLAGS.ae_loss:
             losses['g_loss'] += losses['ae_loss']
+        #if FLAGS.perceptual:
+        #    losses['g_loss'] += losses['perceptual_loss']
         g_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, 'inpaint_net')
         d_vars = tf.get_collection(

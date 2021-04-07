@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#####
+
 # After the training of genrative model.
 
 # Use the "batch_test_genList.py" to generate the file list for batch test.
@@ -9,25 +9,26 @@
 
 # The last one cannot work in twcc node, which is without -X forward for plt.
 # Use the "audio2png_loss.py" to visualize the transformation of mask field from min to max.
-#####
 
-echo "Total argument: $#"
-echo "Script name: $0"
+
+# echo "Total argument: $#"
+# echo "Script name: $0"
 
 # directory settings.
 proj_pth="/work/r08922a13/generative_inpainting"
-checkpoint="/work/r08922a13/generative_inpainting/logs/cur/full_model_esc50_15seg_time_mask_only_with_brush"
-output_pth="/work/r08922a13/generative_inpainting/examples/esc50/mag_seg15_256_all/train_m52_with_brush"
-data_pth="/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/spectrogram_15seg"
+checkpoint="/work/r08922a13/generative_inpainting/logs/cur/full_model_esc50_large_Tmask_brush_b64"
+output_pth="/work/r08922a13/generative_inpainting/examples/esc50/mag_seg15_256_all/test_m52_large_withLarge"
+data_pth="/work/r08922a13/Waveform-auto-encoder/datasets/ESC-50-master/spectrogram_large"
 mask_pth="/work/r08922a13/generative_inpainting/examples/esc50/mask_256/mask_time_052.npy"
-file_list_pth="/work/r08922a13/generative_inpainting/data/esc50/spec_15seg/train_shuffled.flist"
+file_list_pth="/work/r08922a13/generative_inpainting/data/esc50/spec_large/validation_static_view.flist"
 # train_shuffled.flist(train), validation_static_view.flist(test)
 
 # other settings
-#mask_type="time"  # [time, square]
+# mask_type="time"  # [time, square]
 loss_type="mean_l1"    # [l1, mean_l1, psnr]
 imageH=256
 imageW=256
+MAX_TEST=6000
 
 
 # Processing parts.
@@ -35,7 +36,8 @@ echo "Generate the file list of batch test."
 python batch_test_genList.py \
     --file_list_pth "${file_list_pth}" \
     --output_pth "${output_pth}" \
-    --mask_pth "${mask_pth}"
+    --mask_pth "${mask_pth}" \
+    --max_test_num "${MAX_TEST}"
 echo "Generation Finish."
 
 echo "Start batch test..."

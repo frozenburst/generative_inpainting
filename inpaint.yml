@@ -8,11 +8,11 @@ gpu_type: 'nvidia-tesla-v100'
 
 # parameters
 name: esc50_gated_conv_v100  # any name
-model_restore: ''  # logs/places2_gated_conv
+model_restore: 'logs/cur/full_model_esc50_large_Tmask_brush_b64'  # logs/places2_gated_conv
 dataset: 'esc50'  # 'tmnist', 'dtd', 'places2', 'celeba', 'imagenet', 'cityscapes'
 random_crop: False  # Set to false when dataset is 'celebahq', meaning only resize the images to img_shapes, instead of crop img_shapes from a larger raw image. This is useful when you train on images with different resolutions like places2. In these cases, please set random_crop to true.
 val: True  # true if you want to view validation results in tensorboard
-log_dir: logs/cur/full_model_esc50_15seg_Tmask_brush_perceptual
+log_dir: logs/cur/full_model_esc50_large_Tmask_brush_b64_2rd
 
 gan: 'sngan'
 gan_loss_alpha: 1.
@@ -63,8 +63,8 @@ data_flist:
   ]
   # audio to spectrogram https://github.com/karolpiczak/ESC-50
   esc50: [
-    'data/esc50/spec_15seg/train_shuffled.flist',
-    'data/esc50/spec_15seg/validation_static_view.flist'                 
+    'data/esc50/spec_large/train_shuffled.flist',
+    'data/esc50/spec_large/validation_static_view.flist'                 
   ]
   # AudioSet from Google, parts of. # 111k
   audioset: [
@@ -79,10 +79,10 @@ transpose: False            # default: False
 static_view_size: 30
 img_shapes: [256, 256, 1]
 height: 255
-width: 96                   # max of mask width
+width: 64                   # max of mask width
 max_delta_height: 0         # max decrease of mask side
-max_delta_width: 64
-batch_size: 16
+max_delta_width: 32
+batch_size: 32
 vertical_margin: 0
 horizontal_margin: 97       # width + 1
 
@@ -90,8 +90,9 @@ horizontal_margin: 97       # width + 1
 ae_loss: True
 l1_loss: True
 l1_loss_alpha: 1.
-perceptual: True
+perceptual: False
 perceptual_alpha: 1.
+attention: False
 
 # to tune
 guided: False

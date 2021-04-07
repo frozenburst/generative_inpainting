@@ -42,7 +42,7 @@ if __name__ == "__main__":
     model = xception(num_classes, image_height, image_width, training=False)
 
     print(model.summary())
-    model.load_weights('./checkpoints/xception_01/save_at_10.h5')
+    model.load_weights('./checkpoints/xception_tf2/tf2_save_at_10.h5')
 
     layer_name = 'global_average_pooling2d'
     #layer_name = 'dense'
@@ -61,9 +61,9 @@ if __name__ == "__main__":
     test_loss, test_acc = model.evaluate(test_data,  test_labels, verbose=2)
     print('\nTest accuracy:', test_acc)
 
-    intermediate_layer_model.save(f'{saved_model_pth}/inter_model.h5')
+    intermediate_layer_model.save(f'{saved_model_pth}/tf2_inter_model.h5')
 
-    reconstructed_model = keras.models.load_model(f'{saved_model_pth}/inter_model.h5')
+    reconstructed_model = keras.models.load_model(f'{saved_model_pth}/tf2_inter_model.h5')
 
     np.testing.assert_allclose(
         intermediate_layer_model.predict(test_data), reconstructed_model.predict(test_data)
